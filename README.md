@@ -21,9 +21,5 @@ just test "invalid variable"
 just lint --no-emoji --file example/templates/confirmation.html
 ```
 
-## `update-email-templates.ts`
-
-TO CONVERT TO SH
-
-
 ## About
+
