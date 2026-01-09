@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      .button {
+        background-color: #667eea;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body style="font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <h2 style="color: #1f2937; margin-top: 0;">Welcome to KeyLogger.LoL!</h2>
+    <p style="color: #4b5563; margin-bottom: 20px;">Thank you for creating an account! Please verify your email address by clicking the button below:</p>
+    <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next={{ .RedirectTo }}" class="button" style="background-color: #667eea; color: white; padding: 10px 20px; border-radius: 5px; text-decoration: none;">Verify Email</a>
+    <!-- line break with styling -->
+    <div style="margin-top: 30px; width: 90%; margin-left: auto; margin-right: auto; line-height: 1px; height: 1px; background-color: #667eea;border-radius: 5px;">&nbsp;</div>
+    <p style="color: #6b7280; font-size: 12px; margin-top: 30px;">Or copy and paste this link into your browser:</p>
+    <p style="color: #6b7280; font-size: 12px; margin-top: 30px;">{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next={{ .RedirectTo }}</p>
+    <div style="margin-top: 30px; width: 90%; margin-left: auto; margin-right: auto; line-height: 1px; height: 1px; background-color: #667eea;border-radius: 5px;">&nbsp;</div>
+    <p style="color: #6b7280; font-size: 12px; margin-top: 30px;">If you didn't create an account, you can safely ignore this email.</p>
+  </body>
+</html>
