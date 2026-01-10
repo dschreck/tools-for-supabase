@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
+#
 # Shell helpers for extracting simple values from TOML files.
+#
+# Licensed under the MIT License. Copyright (c) 2026 David Schreck 
+# https://github.com/dschreck/tools-for-supabase
+# 
 
 # toml_get <file> <section> <key>
 # Supports either [section]\nkey = "value" or dotted keys like section.key = "value".
