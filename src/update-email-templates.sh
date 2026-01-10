@@ -12,6 +12,10 @@
 #
 # Get your access token from: https://supabase.com/dashboard/account/tokens
 # Get your project ref from: Supabase Dashboard -> Project Settings -> General -> Reference ID
+#
+# Licensed under the MIT License. Copyright (c) 2026 David Schreck 
+# https://github.com/dschreck/tools-for-supabase
+# 
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -23,6 +27,7 @@ SUPABASE_CONFIG_PATH="${SUPABASE_CONFIG_PATH:-}"
 SUPABASE_ACCESS_TOKEN="${SUPABASE_ACCESS_TOKEN:-}"
 SUPABASE_PROJECT_REF="${SUPABASE_PROJECT_REF:-}"
 PROJECT_REF_FILE="${PROJECT_REF_FILE:-.supabase/project-ref}"
+USE_EMOJI=true
 CONFIRMATION_SUBJECT=""
 RECOVERY_SUBJECT=""
 MAGIC_LINK_SUBJECT=""
@@ -33,8 +38,17 @@ CONFIG_DIR=""
 CONFIG_ROOT=""
 TEMPLATES_TO_UPDATE=()
 USED_TEMPLATES_DIR=false
+CONFIRMATION_HTML=""
+RECOVERY_HTML=""
+MAGIC_LINK_HTML=""
+PAYLOAD=""
+PAYLOAD_ENTRIES=0
 
+# shellcheck source=src/lib/shell-utils.sh
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/shell-utils.sh"
 # shellcheck source=src/lib/toml.sh
+# shellcheck disable=SC1091
 source "$SCRIPT_DIR/lib/toml.sh"
 
 print_help() {
@@ -54,6 +68,7 @@ Options:
   --confirmation-template   Path to confirmation HTML template
   --recovery-template       Path to recovery HTML template
   --magic-link-template     Path to magic link HTML template
+  --no-emoji                Disable emoji output (plain text)
   -h, --help               Show this help message
 
 Environment:
@@ -63,35 +78,6 @@ Environment:
   TEMPLATES_DIR            Templates directory (optional)
   PROJECT_REF_FILE         File to read the project ref from (optional)
 HELP_EOF
-}
-
-require_cmd() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    printf 'Error: Required command not found: %s\n' "$1" >&2
-    exit 1
-  fi
-}
-
-json_escape() {
-  local value="$1"
-  value=${value//\\/\\\\}
-  value=${value//"/\\"}
-  value=${value//$'\n'/\\n}
-  value=${value//$'\r'/\\r}
-  value=${value//$'\t'/\\t}
-  printf '%s' "$value"
-}
-
-contains_item() {
-  local needle="$1"
-  shift
-  local item
-  for item in "$@"; do
-    if [[ "$item" == "$needle" ]]; then
-      return 0
-    fi
-  done
-  return 1
 }
 
 template_label() {
@@ -213,22 +199,183 @@ validate_template_inputs() {
   fi
 
   if [[ ${#TEMPLATES_TO_UPDATE[@]} -eq 0 ]]; then
-    printf 'Error: No complete template inputs found.\n' >&2
+    log_error "No complete template inputs found."
     if [[ -n "$SUPABASE_CONFIG_PATH" ]]; then
-      printf 'Checked config: %s\n' "$SUPABASE_CONFIG_PATH" >&2
+      log_info "Checked config: $SUPABASE_CONFIG_PATH" "stderr"
     fi
     if [[ ${#partial[@]} -gt 0 ]]; then
-      printf 'Incomplete entries:\n' >&2
+      log_warn "Incomplete entries:"
       printf '  - %s\n' "${partial[@]}" >&2
     fi
-    printf 'Provide --config or pass --{confirmation,recovery,magic-link}-{subject,template}.\n' >&2
+    log_tip "Provide --config or pass --{confirmation,recovery,magic-link}-{subject,template}."
     exit 1
   fi
 
   if [[ ${#partial[@]} -gt 0 ]]; then
-    printf 'Warning: Skipping incomplete template inputs:\n' >&2
+    log_warn "Skipping incomplete template inputs:"
     printf '  - %s\n' "${partial[@]}" >&2
   fi
+}
+
+resolve_default_config_path() {
+  if [[ -z "$SUPABASE_CONFIG_PATH" && -f "supabase/config.toml" ]]; then
+    SUPABASE_CONFIG_PATH="supabase/config.toml"
+  fi
+}
+
+load_config_templates() {
+  if [[ -z "$SUPABASE_CONFIG_PATH" ]]; then
+    return 0
+  fi
+
+  if [[ ! -f "$SUPABASE_CONFIG_PATH" ]]; then
+    log_error "Config file not found: $SUPABASE_CONFIG_PATH"
+    exit 1
+  fi
+
+  CONFIG_DIR="$(cd "$(dirname "$SUPABASE_CONFIG_PATH")" && pwd)"
+  CONFIG_ROOT="$CONFIG_DIR"
+  if [[ "$(basename "$CONFIG_DIR")" == "supabase" ]]; then
+    CONFIG_ROOT="$(cd "$CONFIG_DIR/.." && pwd)"
+  fi
+
+  load_template_from_config "confirmation" CONFIRMATION_SUBJECT CONFIRMATION_TEMPLATE_PATH
+  load_template_from_config "recovery" RECOVERY_SUBJECT RECOVERY_TEMPLATE_PATH
+  load_template_from_config "magic_link" MAGIC_LINK_SUBJECT MAGIC_LINK_TEMPLATE_PATH
+  if [[ -z "$MAGIC_LINK_SUBJECT" || -z "$MAGIC_LINK_TEMPLATE_PATH" ]]; then
+    load_template_from_config "magiclink" MAGIC_LINK_SUBJECT MAGIC_LINK_TEMPLATE_PATH
+  fi
+}
+
+resolve_project_ref() {
+  if [[ -z "$SUPABASE_PROJECT_REF" && -f "$PROJECT_REF_FILE" ]]; then
+    SUPABASE_PROJECT_REF="$(<"$PROJECT_REF_FILE")"
+    SUPABASE_PROJECT_REF="${SUPABASE_PROJECT_REF//$'\r'/}"
+    SUPABASE_PROJECT_REF="${SUPABASE_PROJECT_REF//$'\n'/}"
+  fi
+}
+
+ensure_auth_env() {
+  if [[ -z "$SUPABASE_ACCESS_TOKEN" || -z "$SUPABASE_PROJECT_REF" ]]; then
+    log_error "SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF are required (env, --project-ref, or $PROJECT_REF_FILE)"
+    printf '\n' >&2
+    print_help >&2
+    exit 1
+  fi
+}
+
+ensure_templates_dir() {
+  if [[ "$USED_TEMPLATES_DIR" == "true" && ! -d "$TEMPLATES_DIR" ]]; then
+    log_error "Templates directory not found: $TEMPLATES_DIR"
+    exit 1
+  fi
+}
+
+ensure_template_files() {
+  local missing_files=()
+
+  if array_contains "confirmation" "${TEMPLATES_TO_UPDATE[@]}"; then
+    [[ -f "$CONFIRMATION_TEMPLATE_PATH" ]] || missing_files+=("$CONFIRMATION_TEMPLATE_PATH")
+  fi
+  if array_contains "recovery" "${TEMPLATES_TO_UPDATE[@]}"; then
+    [[ -f "$RECOVERY_TEMPLATE_PATH" ]] || missing_files+=("$RECOVERY_TEMPLATE_PATH")
+  fi
+  if array_contains "magic_link" "${TEMPLATES_TO_UPDATE[@]}"; then
+    [[ -f "$MAGIC_LINK_TEMPLATE_PATH" ]] || missing_files+=("$MAGIC_LINK_TEMPLATE_PATH")
+  fi
+
+  if [[ ${#missing_files[@]} -gt 0 ]]; then
+    log_error "Expected templates not found."
+    log_info "Missing required files:" "stderr"
+    printf '  - %s\n' "${missing_files[@]}" >&2
+    exit 1
+  fi
+}
+
+read_template_files() {
+  CONFIRMATION_HTML=""
+  RECOVERY_HTML=""
+  MAGIC_LINK_HTML=""
+
+  if array_contains "confirmation" "${TEMPLATES_TO_UPDATE[@]}"; then
+    CONFIRMATION_HTML="$(<"$CONFIRMATION_TEMPLATE_PATH")"
+  fi
+  if array_contains "recovery" "${TEMPLATES_TO_UPDATE[@]}"; then
+    RECOVERY_HTML="$(<"$RECOVERY_TEMPLATE_PATH")"
+  fi
+  if array_contains "magic_link" "${TEMPLATES_TO_UPDATE[@]}"; then
+    MAGIC_LINK_HTML="$(<"$MAGIC_LINK_TEMPLATE_PATH")"
+  fi
+}
+
+append_payload() {
+  local key="$1"
+  local value="$2"
+
+  if (( PAYLOAD_ENTRIES > 0 )); then
+    PAYLOAD+=$',\n'
+  fi
+  PAYLOAD+="  \"${key}\": \"$(json_escape "$value")\""
+  PAYLOAD_ENTRIES=$((PAYLOAD_ENTRIES + 1))
+}
+
+build_payload() {
+  PAYLOAD="{"
+  PAYLOAD_ENTRIES=0
+
+  if array_contains "confirmation" "${TEMPLATES_TO_UPDATE[@]}"; then
+    append_payload "mailer_subjects_confirmation" "$CONFIRMATION_SUBJECT"
+    append_payload "mailer_templates_confirmation_content" "$CONFIRMATION_HTML"
+  fi
+  if array_contains "recovery" "${TEMPLATES_TO_UPDATE[@]}"; then
+    append_payload "mailer_subjects_recovery" "$RECOVERY_SUBJECT"
+    append_payload "mailer_templates_recovery_content" "$RECOVERY_HTML"
+  fi
+  if array_contains "magic_link" "${TEMPLATES_TO_UPDATE[@]}"; then
+    append_payload "mailer_subjects_magic_link" "$MAGIC_LINK_SUBJECT"
+    append_payload "mailer_templates_magic_link_content" "$MAGIC_LINK_HTML"
+  fi
+
+  PAYLOAD+=$'\n}\n'
+}
+
+send_request() {
+  local response status body
+
+  response=$(curl -sS -w '\n%{http_code}' \
+    -X PATCH "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/auth" \
+    -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+    -H "Content-Type: application/json" \
+    --data "$PAYLOAD")
+
+  status="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+
+  if [[ -z "$status" || ! "$status" =~ ^[0-9]+$ ]]; then
+    log_error "Unexpected response from API."
+    printf '%s\n' "$response" >&2
+    exit 1
+  fi
+
+  if (( status < 200 || status >= 300 )); then
+    log_error "Failed to update templates (status $status)"
+    if [[ -n "$body" ]]; then
+      printf '%s\n' "$body" >&2
+    fi
+    exit 1
+  fi
+}
+
+print_success() {
+  log_ok "Email templates updated successfully."
+  printf '\n'
+  log_info "Updated templates:"
+  local template_name
+  for template_name in "${TEMPLATES_TO_UPDATE[@]}"; do
+    printf '  - %s\n' "$(template_label "$template_name")"
+  done
+  printf '\n'
+  log_info "Templates will be used for all new emails sent from Supabase Auth."
 }
 
 parse_args() {
@@ -270,6 +417,11 @@ parse_args() {
         MAGIC_LINK_TEMPLATE_PATH="$2"
         shift 2
         ;;
+      --no-emoji)
+        USE_EMOJI=false
+        init_labels "$USE_EMOJI"
+        shift
+        ;;
       -h|--help)
         print_help
         exit 0
@@ -279,12 +431,14 @@ parse_args() {
         break
         ;;
       -* )
-        printf 'Error: Unknown option: %s\n\n' "$1" >&2
+        log_error "Unknown option: $1"
+        printf '\n' >&2
         print_help >&2
         exit 2
         ;;
       *)
-        printf 'Error: Unexpected argument: %s\n\n' "$1" >&2
+        log_error "Unexpected argument: $1"
+        printf '\n' >&2
         print_help >&2
         exit 2
         ;;
@@ -293,144 +447,23 @@ parse_args() {
 }
 
 main() {
+  init_labels "$USE_EMOJI"
   parse_args "$@"
+  init_labels "$USE_EMOJI"
 
-  if [[ -z "$SUPABASE_CONFIG_PATH" && -f "supabase/config.toml" ]]; then
-    SUPABASE_CONFIG_PATH="supabase/config.toml"
-  fi
-
-  if [[ -n "$SUPABASE_CONFIG_PATH" ]]; then
-    if [[ ! -f "$SUPABASE_CONFIG_PATH" ]]; then
-      printf 'Error: Config file not found: %s\n' "$SUPABASE_CONFIG_PATH" >&2
-      exit 1
-    fi
-
-    CONFIG_DIR="$(cd "$(dirname "$SUPABASE_CONFIG_PATH")" && pwd)"
-    CONFIG_ROOT="$CONFIG_DIR"
-    if [[ "$(basename "$CONFIG_DIR")" == "supabase" ]]; then
-      CONFIG_ROOT="$(cd "$CONFIG_DIR/.." && pwd)"
-    fi
-
-    load_template_from_config "confirmation" CONFIRMATION_SUBJECT CONFIRMATION_TEMPLATE_PATH
-    load_template_from_config "recovery" RECOVERY_SUBJECT RECOVERY_TEMPLATE_PATH
-    load_template_from_config "magic_link" MAGIC_LINK_SUBJECT MAGIC_LINK_TEMPLATE_PATH
-    if [[ -z "$MAGIC_LINK_SUBJECT" || -z "$MAGIC_LINK_TEMPLATE_PATH" ]]; then
-      load_template_from_config "magiclink" MAGIC_LINK_SUBJECT MAGIC_LINK_TEMPLATE_PATH
-    fi
-  fi
-
+  resolve_default_config_path
+  load_config_templates
   apply_template_dir_defaults
   validate_template_inputs
-
-  if [[ -z "$SUPABASE_PROJECT_REF" && -f "$PROJECT_REF_FILE" ]]; then
-    SUPABASE_PROJECT_REF="$(<"$PROJECT_REF_FILE")"
-    SUPABASE_PROJECT_REF="${SUPABASE_PROJECT_REF//$'\r'/}"
-    SUPABASE_PROJECT_REF="${SUPABASE_PROJECT_REF//$'\n'/}"
-  fi
-
-  if [[ -z "$SUPABASE_ACCESS_TOKEN" || -z "$SUPABASE_PROJECT_REF" ]]; then
-    printf 'Error: SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF are required (env, --project-ref, or %s)\n\n' "$PROJECT_REF_FILE" >&2
-    print_help >&2
-    exit 1
-  fi
-
+  resolve_project_ref
+  ensure_auth_env
   require_cmd curl
-
-  if [[ "$USED_TEMPLATES_DIR" == "true" && ! -d "$TEMPLATES_DIR" ]]; then
-    printf 'Error: Templates directory not found: %s\n' "$TEMPLATES_DIR" >&2
-    exit 1
-  fi
-
-  local missing_files=()
-  if contains_item "confirmation" "${TEMPLATES_TO_UPDATE[@]}"; then
-    [[ -f "$CONFIRMATION_TEMPLATE_PATH" ]] || missing_files+=("$CONFIRMATION_TEMPLATE_PATH")
-  fi
-  if contains_item "recovery" "${TEMPLATES_TO_UPDATE[@]}"; then
-    [[ -f "$RECOVERY_TEMPLATE_PATH" ]] || missing_files+=("$RECOVERY_TEMPLATE_PATH")
-  fi
-  if contains_item "magic_link" "${TEMPLATES_TO_UPDATE[@]}"; then
-    [[ -f "$MAGIC_LINK_TEMPLATE_PATH" ]] || missing_files+=("$MAGIC_LINK_TEMPLATE_PATH")
-  fi
-
-  if [[ ${#missing_files[@]} -gt 0 ]]; then
-    printf 'Error: Expected templates not found.\n' >&2
-    printf 'Missing required files:\n' >&2
-    printf '  - %s\n' "${missing_files[@]}" >&2
-    exit 1
-  fi
-
-  local confirmation_html="" recovery_html="" magiclink_html=""
-  if contains_item "confirmation" "${TEMPLATES_TO_UPDATE[@]}"; then
-    confirmation_html="$(<"$CONFIRMATION_TEMPLATE_PATH")"
-  fi
-  if contains_item "recovery" "${TEMPLATES_TO_UPDATE[@]}"; then
-    recovery_html="$(<"$RECOVERY_TEMPLATE_PATH")"
-  fi
-  if contains_item "magic_link" "${TEMPLATES_TO_UPDATE[@]}"; then
-    magiclink_html="$(<"$MAGIC_LINK_TEMPLATE_PATH")"
-  fi
-
-  local payload payload_entries
-  payload="{"
-  payload_entries=0
-
-  append_payload() {
-    local key="$1"
-    local value="$2"
-    if (( payload_entries > 0 )); then
-      payload+=$',\n'
-    fi
-    payload+="  \"${key}\": \"$(json_escape "$value")\""
-    payload_entries=$((payload_entries + 1))
-  }
-
-  if contains_item "confirmation" "${TEMPLATES_TO_UPDATE[@]}"; then
-    append_payload "mailer_subjects_confirmation" "$CONFIRMATION_SUBJECT"
-    append_payload "mailer_templates_confirmation_content" "$confirmation_html"
-  fi
-  if contains_item "recovery" "${TEMPLATES_TO_UPDATE[@]}"; then
-    append_payload "mailer_subjects_recovery" "$RECOVERY_SUBJECT"
-    append_payload "mailer_templates_recovery_content" "$recovery_html"
-  fi
-  if contains_item "magic_link" "${TEMPLATES_TO_UPDATE[@]}"; then
-    append_payload "mailer_subjects_magic_link" "$MAGIC_LINK_SUBJECT"
-    append_payload "mailer_templates_magic_link_content" "$magiclink_html"
-  fi
-
-  payload+=$'\n}\n'
-
-  local response status body
-  response=$(curl -sS -w '\n%{http_code}' \
-    -X PATCH "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/auth" \
-    -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-    -H "Content-Type: application/json" \
-    --data "$payload")
-
-  status="${response##*$'\n'}"
-  body="${response%$'\n'*}"
-
-  if [[ -z "$status" || ! "$status" =~ ^[0-9]+$ ]]; then
-    printf 'Error: Unexpected response from API.\n' >&2
-    printf '%s\n' "$response" >&2
-    exit 1
-  fi
-
-  if (( status < 200 || status >= 300 )); then
-    printf 'Error: Failed to update templates (status %s)\n' "$status" >&2
-    if [[ -n "$body" ]]; then
-      printf '%s\n' "$body" >&2
-    fi
-    exit 1
-  fi
-
-  printf 'Email templates updated successfully.\n\n'
-  printf 'Updated templates:\n'
-  local template_name
-  for template_name in "${TEMPLATES_TO_UPDATE[@]}"; do
-    printf '  - %s\n' "$(template_label "$template_name")"
-  done
-  printf '\n'
-  printf 'Templates will be used for all new emails sent from Supabase Auth.\n'
+  ensure_templates_dir
+  ensure_template_files
+  read_template_files
+  build_payload
+  send_request
+  print_success
 }
 
 main "$@"

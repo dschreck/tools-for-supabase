@@ -14,3 +14,6 @@ set dotenv-load := true
 
 @update *ARGS:
   bash src/update-email-templates.sh {{ARGS}}
+
+@shellcheck:
+  shellcheck -x src/*.sh src/lib/*.sh tests/*.sh

@@ -15,11 +15,17 @@
 #   chmod +x lint-supabase-template.sh
 #   mv lint-supabase-template.sh ~/.bin/
 #   # Ensure ~/.bin is in your PATH
+#
+# Licensed under the MIT License. Copyright (c) 2026 David Schreck 
+# https://github.com/dschreck/tools-for-supabase
+# 
+
 
 set -euo pipefail
 IFS=$'\n\t'
 
 SCRIPT_NAME="$(basename "$0")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 TEMPLATE_NAME="confirmation"
 TEMPLATES_DIR="supabase/templates"
@@ -33,11 +39,8 @@ ERRORS=()
 WARNINGS=()
 FOUND_VARIABLES=()
 
-LABEL_OK="✅"
-LABEL_WARN="⚠️"
-LABEL_ERR="❌"
-LABEL_INFO="🔍"
-LABEL_TIP="💡"
+# shellcheck source=src/lib/shell-utils.sh
+source "$SCRIPT_DIR/lib/shell-utils.sh"
 
 print_help() {
   cat <<HELP_EOF
@@ -63,42 +66,6 @@ Examples:
   ${SCRIPT_NAME} --all
   ${SCRIPT_NAME} --mode fragment partial
 HELP_EOF
-}
-
-set_labels() {
-  if [[ "$USE_EMOJI" == "true" ]]; then
-    LABEL_OK="✅"
-    LABEL_WARN="⚠️"
-    LABEL_ERR="❌"
-    LABEL_INFO="🔍"
-    LABEL_TIP="💡"
-  else
-    LABEL_OK="OK"
-    LABEL_WARN="WARN"
-    LABEL_ERR="ERROR"
-    LABEL_INFO="INFO"
-    LABEL_TIP="TIP"
-  fi
-}
-
-add_error() {
-  ERRORS+=("$1")
-}
-
-add_warning() {
-  WARNINGS+=("$1")
-}
-
-array_contains() {
-  local needle="$1"
-  shift
-  local item
-  for item in "$@"; do
-    if [[ "$item" == "$needle" ]]; then
-      return 0
-    fi
-  done
-  return 1
 }
 
 count_matches() {
@@ -477,7 +444,7 @@ parse_args() {
         ;;
       --no-emoji)
         USE_EMOJI=false
-        set_labels
+        init_labels "$USE_EMOJI"
         shift
         ;;
       -h|--help)
@@ -502,9 +469,9 @@ parse_args() {
 }
 
 main() {
-  set_labels
+  init_labels "$USE_EMOJI"
   parse_args "$@"
-  set_labels
+  init_labels "$USE_EMOJI"
   validate_mode
 
   if [[ -n "$FILE_PATH" && "$VALIDATE_ALL" == "true" ]]; then
