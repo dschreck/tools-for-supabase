@@ -4,6 +4,16 @@ set -euo pipefail
 echo "▶ tools-for-supabase quick installer"
 echo "▶ https://github.com/dschreck/tools-for-supabase"
 echo
+echo "⚠️  Review this script before running:"
+echo "    curl -fsSL tools.keylogger.lol | less"
+echo
+
+for i in 3 2 1; do
+  printf "\r▶ Running installer in %d... " "$i"
+  sleep 1
+done
+printf "\r▶ Running installer...      \n"
+echo
 
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/share/tools-for-supabase}"
 
