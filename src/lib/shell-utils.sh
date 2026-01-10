@@ -65,6 +65,16 @@ log_tip() {
   log_line "${LABEL_TIP:-TIP}" "$1" "stderr"
 }
 
+log_plain() {
+  local message="$1"
+  local stream="${2:-stdout}"
+  if [[ "$stream" == "stderr" ]]; then
+    printf '%s\n' "$message" >&2
+  else
+    printf '%s\n' "$message"
+  fi
+}
+
 add_error() {
   if declare -p ERRORS >/dev/null 2>&1; then
     ERRORS+=("$1")
@@ -101,4 +111,52 @@ array_contains() {
     fi
   done
   return 1
+}
+
+# Cross-platform sed in-place editing
+# Usage: sed_inplace "s|pattern|replacement|" file
+sed_inplace() {
+  local expression="$1"
+  local file="$2"
+  if [[ "$(uname)" == "Darwin" ]]; then
+    sed -i '' "$expression" "$file"
+  else
+    sed -i.bak "$expression" "$file"
+    rm -f "${file}.bak"
+  fi
+}
+
+# Read and clean project reference from file
+# Removes carriage returns and newlines
+read_project_ref_file() {
+  local file="$1"
+  if [[ ! -f "$file" ]]; then
+    return 1
+  fi
+  local ref
+  ref=$(<"$file")
+  ref="${ref//$'\r'/}"
+  ref="${ref//$'\n'/}"
+  printf '%s' "$ref"
+}
+
+# Resolve project reference from config.toml or project-ref file
+# Checks .supabase/config.toml first, then .supabase/project-ref
+# Returns the project ref via stdout, or empty string if not found
+resolve_project_ref_from_config() {
+  local config_toml="${1:-.supabase/config.toml}"
+  local project_ref_file="${2:-.supabase/project-ref}"
+  local ref=""
+  
+  if [[ -f "$config_toml" ]]; then
+    ref=$(grep '^project_id' "$config_toml" | cut -d'"' -f2 || true)
+  fi
+  
+  if [[ -z "$ref" && -f "$project_ref_file" ]]; then
+    ref=$(read_project_ref_file "$project_ref_file")
+  fi
+  
+  if [[ -n "$ref" ]]; then
+    printf '%s' "$ref"
+  fi
 }

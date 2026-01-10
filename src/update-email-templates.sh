@@ -248,10 +248,12 @@ load_config_templates() {
 }
 
 resolve_project_ref() {
-  if [[ -z "$SUPABASE_PROJECT_REF" && -f "$PROJECT_REF_FILE" ]]; then
-    SUPABASE_PROJECT_REF="$(<"$PROJECT_REF_FILE")"
-    SUPABASE_PROJECT_REF="${SUPABASE_PROJECT_REF//$'\r'/}"
-    SUPABASE_PROJECT_REF="${SUPABASE_PROJECT_REF//$'\n'/}"
+  if [[ -z "$SUPABASE_PROJECT_REF" ]]; then
+    local ref
+    ref=$(resolve_project_ref_from_config ".supabase/config.toml" "$PROJECT_REF_FILE")
+    if [[ -n "$ref" ]]; then
+      SUPABASE_PROJECT_REF="$ref"
+    fi
   fi
 }
 
