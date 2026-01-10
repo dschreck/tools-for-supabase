@@ -25,7 +25,6 @@ init_labels() {
     LABEL_INFO="🔍"
     LABEL_TIP="💡"
   else
-
     LABEL_OK="OK"
     LABEL_WARN="WARN"
     LABEL_ERR="ERROR"

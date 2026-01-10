@@ -447,7 +447,6 @@ parse_args() {
 }
 
 main() {
-  init_labels "$USE_EMOJI"
   parse_args "$@"
   init_labels "$USE_EMOJI"
 

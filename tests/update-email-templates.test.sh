@@ -143,6 +143,32 @@ test_project_ref_flag_overrides_file() {
   rm -rf "$tmp_dir"
 }
 
+test_no_emoji_flag() {
+  rm -f "$CURL_LOG_FILE" "${CURL_LOG_FILE}.data"
+  run_cmd env SUPABASE_ACCESS_TOKEN=token SUPABASE_PROJECT_REF=project \
+    PATH="$STUB_DIR:$PATH" CURL_LOG_FILE="$CURL_LOG_FILE" \
+    bash "$SCRIPT_PATH" --no-emoji --config "$FIXTURES_DIR/config.toml"
+
+  assert_status 0 && \
+    assert_contains "OK" && \
+    assert_contains "INFO" && \
+    assert_not_contains "✅" && \
+    assert_not_contains "🔍"
+}
+
+test_emoji_default() {
+  rm -f "$CURL_LOG_FILE" "${CURL_LOG_FILE}.data"
+  run_cmd env SUPABASE_ACCESS_TOKEN=token SUPABASE_PROJECT_REF=project \
+    PATH="$STUB_DIR:$PATH" CURL_LOG_FILE="$CURL_LOG_FILE" \
+    bash "$SCRIPT_PATH" --config "$FIXTURES_DIR/config.toml"
+
+  assert_status 0 && \
+    assert_contains "✅" && \
+    assert_contains "🔍" && \
+    assert_not_contains "OK" && \
+    assert_not_contains "INFO"
+}
+
 run_test "missing env" test_missing_env
 run_test "missing template inputs" test_missing_template_inputs
 run_test "missing dir" test_missing_dir
@@ -152,5 +178,7 @@ run_test "partial update" test_partial_update
 run_test "api failure" test_api_failure
 run_test "project ref from file" test_project_ref_from_file
 run_test "project ref flag overrides file" test_project_ref_flag_overrides_file
+run_test "no emoji flag" test_no_emoji_flag
+run_test "emoji default" test_emoji_default
 
 finish_tests

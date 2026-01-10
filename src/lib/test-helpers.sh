@@ -47,6 +47,18 @@ assert_contains() {
   return 0
 }
 
+assert_not_contains() {
+  local needle="$1"
+
+  if grep -Fq "$needle" <<< "$CMD_OUTPUT"; then
+    printf 'Unexpected output: %s\n' "$needle"
+    printf '%s\n' "$CMD_OUTPUT"
+    return 1
+  fi
+
+  return 0
+}
+
 assert_equals() {
   local expected="$1"
 
